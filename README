@@ -1,0 +1,12 @@
+Name: Shahil Patel
+Roll No.: 200010039
+
+To run the files, first unzip the folder and then run the following commands in the terminal:
+    python3 200010039_manager.py
+
+Open another terminal and then type the following command:
+    python3 2000010039_peer.py
+
+To create multiple instances of the peer run the 200010039_peer.py file in different terminals
+
+Link to the video demonstration: https://drive.google.com/file/d/1hERDH9XF737ZJywelxPsK8s56fL0_V95/view?usp=sharing
