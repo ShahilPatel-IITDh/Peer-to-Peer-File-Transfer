@@ -30,11 +30,10 @@ class Peer:
         self.manager.connect((self.managerHost, self.managerPort))
         self.manager.sendall("{self.host},{self.port}".encode()).format(self=self)
          
-    # Not updated
+    # Updated
     def handleManager(self):
-        name = input('Enter peer name: ')
         while True:
-            data = self.socket.recv(1024)
+            data = self.manager.recv(1024)
             if not data:
                 raise Exception('Manager disconnected!')
             
@@ -48,7 +47,7 @@ class Peer:
             # print the active peers list here
             print(self.peers)
 
-    # Not updated
+    # Function for prevous Version
     def sendFile(self, filename):
         if filename not in self.files:
             print(f"{filename} not shared!")
@@ -64,30 +63,96 @@ class Peer:
         else:
             print(f"Error sharing {filename}: {ack.decode()}")
 
-    # Not updated
-    def requestFile(self, filename):
-        threads = []
-        # Request file from each peer in parallel
+    def findHosts(self, filename):
+		# Find hosts that have the requested file
+        length = None
+        hosts = []
         for peer in self.peers:
-            t = threading.Thread(target=self.fetchFile, args=(peer, filename), daemon=True)
-            threads.append(t)
-            t.start()
-        
-        # Wait for all threads to finish
-        for t in threads:
-            t.join()
+            conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            conn.connect(peer)
+            conn.sendall(filename.encode())
+            data = conn.recv(1024)
+            if data == b'SORRY':
+                continue
+            if not length:
+                length = int(data.decode())
+            elif length != int(data.decode()):
+                raise Exception('File length mismatch!')
+            hosts.append(peer)
+            conn.close()
+        return hosts, 
 
-        # Combine the file fragments and save the complete file
-        with open(filename, 'wb') as f:
-            for i in range(len(threads)):
-                filepath = f"{filename}.part{i}"
-                with open(filepath, 'rb') as part:
-                    f.write(part.read())
-                os.remove(filepath)
-        print(f"{filename} downloaded successfully!")
+
+    def getChunk(self, host, filename, chunk):
+		# Get a chunk from a host
+        clientConn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        clientConn.connect(host)
+        clientConn.sendall(f"GET {filename} {chunk}".encode())
+        data = clientConn.recv(1024)
+        if not data:
+            raise Exception('Peer disconnected!')
+        clientConn.close()
+        return data
+
+    def transferFromPeer(self, host, filename, num_chunks, reqs, req_lock, data, data_lock):
+		# Run transfer from peer
+        while True:
+            with data_lock:
+                if len(data) == num_chunks:
+                    break
+            with req_lock:
+                if not reqs:
+                    continue
+                req = reqs.pop()
+            try:
+                chunk = self.getChunk(host, filename, req)
+                with data_lock:
+                    data[req] = chunk
+            except:
+                with req_lock:
+                    reqs.append(req)
+                break
+
+    # Updated
+    def requestFile(self, filename):
+        print('Searching for the host')
+        hosts, length = self.findHost(filename)
+
+        if not hosts:
+            print('No host found!')
+            return
+
+        print("Transfering the file")
+
+        numChunks = -(length // -self.chunk_size)
+        reqs = list(range(numChunks))
+
+        reqLock = threading.Lock()
+        data = {}
+        dataLock = threading.Lock()
+
+        # Start the threads to transfer the file
+        threads=[]
+        for host in hosts:
+            threads.append(threading.Thread(target=self.transferFromPeer, args=(host, filename, numChunks,reqs, reqLock, data, dataLock), daemon=True))
+            threads[-1].start()
+
+        # Wait for the threads to finish
+        for thread in threads:
+            thread.join()
+        
+        print("Writing the file")
+
+        fileData = b''.join([data[i] for i in range(len(data))])
+
+        with open(os.path.join(self.folder, filename), 'wb') as f:
+            f.write(fileData)
+        
+        print("File transfer complete!")
 
     # Not updated
     def fetchFile(self, peer, filename):
+        # find the host 
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.bind((self.managerHost, 0))
@@ -108,7 +173,7 @@ class Peer:
         except:
             print(f"Could not fetch {filename} from {peer}")
     
-    # Not updated
+    # Function from Previous Version
     def shareFile(self, filename):
         if filename not in self.files:
             print(f"{filename} not shared!")
